@@ -1,0 +1,11 @@
+name: Credit_Card_Fraud_Hybrid_Project
+
+conda_env: conda.yaml
+
+entry_points:
+  main:
+    parameters:
+      mse_threshold_pct: {type: float, default: 95.0}
+      iso_threshold_pct: {type: float, default: 3.0}
+      outlier_fraction: {type: float, default: 0.05}
+    command: "python main.py --mse_threshold_pct {mse_threshold_pct} --iso_threshold_pct {iso_threshold_pct} --outlier_fraction {outlier_fraction}"
