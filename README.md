@@ -310,7 +310,7 @@ streamlit run app.py
 ## 👨‍💻 Author
 
 Youssef Mahmoud  
-
+linked in : [www.linkedin.com/in/youssef-mahmoud-63b243361]
 ---
 
 ## ⭐ Final Note
