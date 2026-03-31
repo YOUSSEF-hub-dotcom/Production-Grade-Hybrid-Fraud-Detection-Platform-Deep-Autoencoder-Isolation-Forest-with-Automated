@@ -306,6 +306,15 @@ streamlit run app.py
 - Scalable enterprise solution  
 
 ---
+🎯 Production Highlights
+✔ End-to-End Fraud Detection Pipeline
+✔ MLflow Lifecycle Governance
+✔ Model Registry & Promotion
+✔ FastAPI Production Deployment
+✔ Database Logging
+✔ Interactive Business Dashboard
+✔ Observability: Logging, latency monitoring, prediction persistence
+---
 
 ## 👨‍💻 Author
 
