@@ -17,7 +17,7 @@ from logger_config import setup_logging
 
 # إعداد الـ Logger
 setup_logging()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("Model")
 
 
 def build_and_train_hybrid_model(df, mse_threshold_pct, iso_threshold_pct, outlier_fraction):
