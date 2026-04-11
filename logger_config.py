@@ -1,7 +1,7 @@
 import logging
 
 def setup_logging():
-    # منع التكرار لو الفانكشن اتندت أكتر من مرة
+    # Prevent duplication if the function is used more than once.
     if not logging.getLogger().hasHandlers():
         logging.basicConfig(
             level=logging.INFO,
