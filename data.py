@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("Data")
 
 def load_and_preprocess_data(file_path=r"creditcard.csv"):
     logger.info(f"Loading and preprocessing data from %s {file_path}")
