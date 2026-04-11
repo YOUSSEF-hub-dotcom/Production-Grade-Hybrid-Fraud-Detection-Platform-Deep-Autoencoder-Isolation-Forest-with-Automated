@@ -17,43 +17,51 @@ from sklearn.metrics import (
 )
 from logger_config import setup_logging
 
+# Initialize Logging
 setup_logging()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("MLflow")
 
 # ======================================================
 # PyFunc Wrapper – Hybrid Fraud Model
 # ======================================================
 
 class CreditFraudWrapper(mlflow.pyfunc.PythonModel):
+    """
+    Custom MLflow wrapper for the Hybrid Fraud Detection system.
+    Combines Autoencoder Reconstruction Error and Isolation Forest Anomaly Scores.
+    """
     def __init__(self, feature_columns, mse_threshold, iso_threshold):
         self.feature_columns = feature_columns
         self.mse_threshold = mse_threshold
         self.iso_threshold = iso_threshold
 
     def load_context(self, context):
+        # Load serialized components from MLflow artifacts
         self.scaler = joblib.load(context.artifacts["scaler"])
         self.autoencoder = joblib.load(context.artifacts["autoencoder"])
         self.encoder = joblib.load(context.artifacts["encoder"])
         self.iso_forest = joblib.load(context.artifacts["iso_forest"])
 
     def predict(self, context, model_input):
+        # Ensure input is a DataFrame
         if not isinstance(model_input, pd.DataFrame):
             model_input = pd.DataFrame(model_input, columns=self.feature_columns)
 
+        # Preprocessing: Scale features
         X = model_input[self.feature_columns]
         X_scaled = self.scaler.transform(X)
 
+        # Step 1: Isolation Forest detection via Encoder Latent Space
         latent = self.encoder(X_scaled, training=False)
-        
-        # استخدام الـ iso_threshold المحسوب ديناميكياً
         iso_scores = self.iso_forest.decision_function(latent)
         iso_pred = (iso_scores <= self.iso_threshold).astype(int)
 
+        # Step 2: Autoencoder detection via Reconstruction Error (MSE)
         recon = self.autoencoder(X_scaled, training=False)
         mse = np.mean((X_scaled - recon.numpy()) ** 2, axis=1)
-        # استخدام الـ mse_threshold المحسوب ديناميكياً
         ae_pred = (mse > self.mse_threshold).astype(int)
 
+        # Step 3: Hybrid Logic (OR gate) – High Recall Strategy
         final_pred = ((iso_pred == 1) | (ae_pred == 1)).astype(int)
 
         return pd.DataFrame({
@@ -76,12 +84,15 @@ def run_mlflow_lifecycle(
         iso_forest,
         mse_threshold: float,
         iso_threshold: float,
-        # إضافة الباراميترز الأصلية لتسجيلها (النسب المئوية)
         mse_threshold_pct: float,
         iso_threshold_pct: float,
         outlier_fraction: float
 ):
-    logger.info("========== Starting MLflow Lifecycle ==========")
+    """
+    Manages the MLflow lifecycle: Logging params, metrics, artifacts, 
+    and enforcing Quality Gates for Production.
+    """
+    logger.info("--- Initializing MLflow Lifecycle for Fraud Detection ---")
 
     EXPERIMENT_NAME = "Credit_Card_Fraud_Hybrid"
     MODEL_NAME = "Credit_Fraud_Hybrid_Model"
@@ -89,7 +100,8 @@ def run_mlflow_lifecycle(
     mlflow.set_experiment(EXPERIMENT_NAME)
     client = MlflowClient()
 
-    # حفظ الـ Artifacts
+    # Serialize artifacts for logging
+    logger.info("Serializing model components (Scaler, Encoder, Autoencoder, IsoForest)...")
     joblib.dump(scaler, "scaler.pkl")
     joblib.dump(autoencoder, "autoencoder.pkl")
     joblib.dump(encoder, "encoder.pkl")
@@ -104,9 +116,10 @@ def run_mlflow_lifecycle(
 
     with mlflow.start_run(run_name=f"Recall_Run_ISO_{iso_threshold_pct}") as run:
         run_id = run.info.run_id
-        logger.info(f"Run started with ID: {run_id}")
+        logger.info(f"MLflow Run successfully started. ID: {run_id}")
 
-        # 2. تسجيل الباراميترز (النسب والـ Thresholds الفعلية)
+        # 1. Log Training Parameters
+        logger.info("Logging model hyperparameters and dynamic thresholds...")
         mlflow.log_params({
             "latent_dim": encoder.output_shape[1],
             "iso_estimators": iso_forest.n_estimators,
@@ -118,34 +131,40 @@ def run_mlflow_lifecycle(
             "optimization_target": "recall_fraud"
         })
 
-        # 3. محاكاة الـ Inference (التقييم بنفس منطق الـ Wrapper)
+        # 2. Model Evaluation Logic
+        logger.info("Performing model evaluation on test set...")
         X_scaled = scaler.transform(X_test)
         latent = encoder.predict(X_scaled)
+        
+        # Calculate Isolation Forest scores
         iso_scores = iso_forest.decision_function(latent)
         iso_pred = (iso_scores <= iso_threshold).astype(int)
 
+        # Calculate Autoencoder Reconstruction Error
         recon = autoencoder.predict(X_scaled)
         mse = np.mean((X_scaled - recon) ** 2, axis=1)
         ae_pred = (mse > mse_threshold).astype(int)
 
+        # Final Hybrid Prediction
         final_pred = ((iso_pred == 1) | (ae_pred == 1)).astype(int)
 
-        # 4. حساب المقاييس
+        # 3. Calculate and Log Metrics
+        logger.info("Calculating performance metrics (Recall, Precision, Accuracy)...")
         recall_fraud = recall_score(y_test, final_pred, pos_label=1)
         precision_fraud = precision_score(y_test, final_pred, pos_label=1)
         accuracy = accuracy_score(y_test, final_pred)
-        mean = np.mean(iso_scores)
-        stability = np.std(iso_scores)
 
         mlflow.log_metrics({
             "recall_fraud": recall_fraud,
             "precision_fraud": precision_fraud,
             "accuracy": accuracy,
             "false_negative_rate": 1 - recall_fraud,
-            "mean_iso_score": mean,
-            "stability_iso_score": stability
+            "mean_iso_score": np.mean(iso_scores),
+            "stability_iso_score": np.std(iso_scores)
         })
-        # 5. حفظ التقارير والرسومات
+
+        # 4. Artifact Logging (Reports & Visualizations)
+        logger.info("Generating and logging artifacts (Confusion Matrix, Classification Report)...")
         report = classification_report(y_test, final_pred, output_dict=True)
         mlflow.log_dict(report, "classification_report.json")
 
@@ -160,9 +179,11 @@ def run_mlflow_lifecycle(
         mlflow.log_artifact("confusion_matrix.png")
         plt.close()
 
-        # 6. عمل الـ Signature للـ Model
+        # 5. Model Signature & Registration
+        logger.info("Informing model signature and registering Hybrid Model...")
         input_example = X_test[feature_columns].iloc[:5]
-        # تجهيز نسخة مؤقتة للـ Signature
+        
+        # Temp wrapper to infer signature
         temp_wrapper = CreditFraudWrapper(feature_columns, mse_threshold, iso_threshold)
         temp_wrapper.scaler = scaler
         temp_wrapper.autoencoder = autoencoder
@@ -172,7 +193,6 @@ def run_mlflow_lifecycle(
         output_example = temp_wrapper.predict(None, input_example)
         signature = infer_signature(input_example, output_example)
 
-        # 7. تسجيل الموديل النهائي
         mlflow.pyfunc.log_model(
             artifact_path="model",
             python_model=CreditFraudWrapper(feature_columns, mse_threshold, iso_threshold),
@@ -181,24 +201,24 @@ def run_mlflow_lifecycle(
             input_example=input_example
         )
 
-        # 8. الـ Model Registry والـ Quality Gate
+        # 6. Model Registry & Stage Transition
         mlflow.register_model(model_uri=f"runs:/{run_id}/model", name=MODEL_NAME)
-        
         latest_v_info = client.get_latest_versions(MODEL_NAME, stages=["None"])
         latest_version = latest_v_info[0].version
 
-        # الانتقال لـ Staging
+        # Transition to Staging
         client.transition_model_version_stage(
             name=MODEL_NAME, version=latest_version, stage="Staging"
         )
 
-        # Quality Gate: هل الـ Recall يسمح بالدخول للـ Production؟
+        # 7. Production Quality Gate
+        logger.info(f"Enforcing Quality Gate for Version {latest_version}...")
         if recall_fraud >= 0.80:
             client.transition_model_version_stage(
                 name=MODEL_NAME, version=latest_version, stage="Production", archive_existing_versions=True
             )
-            logger.info(f"🚀 Model v{latest_version} promoted to Production | Recall={recall_fraud:.2%}")
+            logger.info(f"🚀 SUCCESS: Model v{latest_version} promoted to Production | Recall: {recall_fraud:.2%}")
         else:
-            logger.error(f"❌ Quality Gate failed for v{latest_version} | Recall={recall_fraud:.2%}")
+            logger.warning(f"❌ FAILED: Model v{latest_version} does not meet Production criteria | Recall: {recall_fraud:.2%}")
 
         return run_id
