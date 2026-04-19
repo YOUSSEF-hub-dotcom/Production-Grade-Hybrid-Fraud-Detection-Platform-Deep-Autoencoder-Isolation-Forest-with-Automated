@@ -72,9 +72,9 @@ def get_db():
 logger.info(f"Attempting to load MLflow model from: {settings.MODEL_URI}")
 try:
     model = mlflow.pyfunc.load_model(settings.MODEL_URI)
-    logger.info("✅ MLflow Hybrid Model loaded successfully.")
+    logger.info(" MLflow Hybrid Model loaded successfully.")
 except Exception as e:
-    logger.error(f"❌ Failed to load model: {str(e)}")
+    logger.error(f" Failed to load model: {str(e)}")
     # Model is critical for service, raise error if loading fails
     raise
 
@@ -223,7 +223,7 @@ def delete_old_logs(db: Session = Depends(get_db)):
 @app.get("/")
 def health():
     """Health check endpoint to verify API status."""
-    return {"status": "API is running 🚀"}
+    return {"status": "API is running "}
 
 if __name__ == "__main__":
     import uvicorn
