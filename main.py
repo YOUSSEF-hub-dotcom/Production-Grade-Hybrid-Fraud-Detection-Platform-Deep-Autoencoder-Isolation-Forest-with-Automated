@@ -73,10 +73,10 @@ def main():
             outlier_fraction=args.outlier_fraction       # Log the contamination factor
         )
 
-        logger.info(f"✅ Pipeline Completed Successfully! MLflow Run ID: {run_id}")
+        logger.info(f" Pipeline Completed Successfully! MLflow Run ID: {run_id}")
 
     except Exception as e:
-        logger.error(f"❌ Pipeline Execution Failed: {str(e)}")
+        logger.error(f" Pipeline Execution Failed: {str(e)}")
         # Re-raise to signal failure to MLflow or CI/CD runner
         raise e
 
