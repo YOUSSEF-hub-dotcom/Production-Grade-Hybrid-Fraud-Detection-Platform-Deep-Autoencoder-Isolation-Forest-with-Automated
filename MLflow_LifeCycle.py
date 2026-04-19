@@ -217,8 +217,8 @@ def run_mlflow_lifecycle(
             client.transition_model_version_stage(
                 name=MODEL_NAME, version=latest_version, stage="Production", archive_existing_versions=True
             )
-            logger.info(f"🚀 SUCCESS: Model v{latest_version} promoted to Production | Recall: {recall_fraud:.2%}")
+            logger.info(f" SUCCESS: Model v{latest_version} promoted to Production | Recall: {recall_fraud:.2%}")
         else:
-            logger.warning(f"❌ FAILED: Model v{latest_version} does not meet Production criteria | Recall: {recall_fraud:.2%}")
+            logger.warning(f" FAILED: Model v{latest_version} does not meet Production criteria | Recall: {recall_fraud:.2%}")
 
         return run_id
