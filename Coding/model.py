@@ -25,7 +25,7 @@ def build_and_train_hybrid_model(df, mse_threshold_pct, iso_threshold_pct, outli
     """
     
     # -------------------------------------------------------------------------
-    # 📊 PHASE 2.5: t-SNE VISUALIZATION (Purely Isolated for Analysis)
+    #  PHASE 2.5: t-SNE VISUALIZATION (Purely Isolated for Analysis)
     # -------------------------------------------------------------------------
     logger.info("Starting isolated t-SNE Visualization...")
     # Creating a temporary sample to prevent heavy computation and transformation leakage on full dataset
@@ -48,7 +48,7 @@ def build_and_train_hybrid_model(df, mse_threshold_pct, iso_threshold_pct, outli
     plt.show()
 
     # -------------------------------------------------------------------------
-    # ✂️ PHASE 3: THE FIREWALL (Strict Row-Level Train/Dev/Test Split)
+    #  PHASE 3: THE FIREWALL (Strict Row-Level Train/Dev/Test Split)
     # -------------------------------------------------------------------------
     logger.info("Executing The Firewall: Splitting dataset to lock Dev and Test sets...")
     X = df.drop('Class', axis=1)
@@ -63,7 +63,7 @@ def build_and_train_hybrid_model(df, mse_threshold_pct, iso_threshold_pct, outli
     logger.info(f"Data Splits Matrix -> Train: {X_train.shape} | Val/Dev: {X_val.shape} | Test: {X_test.shape}")
 
     # -------------------------------------------------------------------------
-    # 🛠️ PHASE 4: FEATURE ENGINEERING & PROCESSING (Post-Split Isolation)
+    #  PHASE 4: FEATURE ENGINEERING & PROCESSING (Post-Split Isolation)
     # -------------------------------------------------------------------------
     logger.info("Handling Skewness: Applying Log Transformation strictly after the Firewall Split...")
     
@@ -87,7 +87,7 @@ def build_and_train_hybrid_model(df, mse_threshold_pct, iso_threshold_pct, outli
     logger.info("Standard Scaling completed. Features are fully ready for Deep Learning feed.")
 
     # -------------------------------------------------------------------------
-    # 🏗️ PHASE 5: DEEP AUTOENCODER ARCHITECTURE
+    #  PHASE 5: DEEP AUTOENCODER ARCHITECTURE
     # -------------------------------------------------------------------------
     logger.info("Building Deep Autoencoder Architecture...")
     tf.keras.utils.set_random_seed(42)
@@ -132,7 +132,7 @@ def build_and_train_hybrid_model(df, mse_threshold_pct, iso_threshold_pct, outli
     logger.info(f"Latent Compression Completed -> Original Dims: {X_train_scaled.shape[1]} | Latent Space: {X_train_latent.shape[1]}")
 
     # -------------------------------------------------------------------------
-    # 🌲 PHASE 6: ISOLATION FOREST ON LATENT SPACE
+    #  PHASE 6: ISOLATION FOREST ON LATENT SPACE
     # -------------------------------------------------------------------------
     logger.info("Training Isolation Forest on Autoencoder Latent Space...")
     iso_forest = IsolationForest(
