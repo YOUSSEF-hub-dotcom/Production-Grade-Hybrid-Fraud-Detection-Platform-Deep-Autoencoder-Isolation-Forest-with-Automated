@@ -24,7 +24,7 @@ def main():
     
     args, unknown = parser.parse_known_args()
 
-    logger.info("🚀 Starting Credit Card Fraud Detection Pipeline Execution...")
+    logger.info(" Starting Credit Card Fraud Detection Pipeline Execution...")
     logger.info(f"Execution Parameters: MSE_Pct={args.mse_threshold_pct}, ISO_Pct={args.iso_threshold_pct}, Outlier={args.outlier_fraction}")
 
     try:
