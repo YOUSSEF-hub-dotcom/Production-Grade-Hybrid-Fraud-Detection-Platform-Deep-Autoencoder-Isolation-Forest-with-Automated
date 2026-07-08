@@ -1,16 +1,17 @@
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
+from typing import List, Optional
 import pandas as pd
 import mlflow.pyfunc
 import jwt
-from datetime import datetime
-from typing import List, Optional
+import joblib
+
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -34,11 +35,20 @@ logger = logging.getLogger("AnomalyDetectionAPI")
 logger.info("--- Starting Fraud Detection API Service ---")
 
 # Database setup and connectivity
+Base = declarative_base()
+SessionLocal = None
+engine = None
+
 try:
-    engine = create_engine(settings.DATABASE_URL)
+    # Adding pooling configurations for production concurrency
+    engine = create_engine(
+        settings.DATABASE_URL, 
+        pool_size=20, 
+        max_overflow=10, 
+        pool_pre_ping=True
+    )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base = declarative_base()
-    logger.info("Database engine initialized successfully.")
+    logger.info("Database engine initialized successfully with pooling.")
 except Exception as e:
     logger.critical(f"Critical Error: Could not initialize database engine: {e}")
 
@@ -51,14 +61,16 @@ class PredictionLog(Base):
     iso_score = Column(Float)
     mse_error = Column(Float)
     process_time_ms = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-# Ensure database tables are created
-try:
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database schema verified/created.")
-except Exception as e:
-    logger.error(f"Error creating database schema: {e}")
+# Ensure database tables are created at startup safely
+@app.on_event("startup")
+def on_startup():
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database schema verified/created successfully at startup.")
+    except Exception as e:
+        logger.error(f"Error creating database schema at startup: {e}")
 
 # Dependency to provide DB session per request
 def get_db():
@@ -72,11 +84,10 @@ def get_db():
 logger.info(f"Attempting to load MLflow model from: {settings.MODEL_URI}")
 try:
     model = mlflow.pyfunc.load_model(settings.MODEL_URI)
-    logger.info(" MLflow Hybrid Model loaded successfully.")
+    logger.info("MLflow Hybrid Model loaded successfully.")
 except Exception as e:
-    logger.error(f" Failed to load model: {str(e)}")
-    # Model is critical for service, raise error if loading fails
-    raise
+    logger.error(f"Failed to load model: {str(e)}")
+    raise RuntimeError(f"Critical System Blocker: Model could not be fetched: {e}")
 
 # Pydantic models for request validation and response formatting
 class FraudInput(BaseModel):
@@ -96,7 +107,6 @@ def get_smart_identifier(request: Request):
     if auth_header and auth_header.startswith("Bearer "):
         try:
             token = auth_header.split(" ")[1]
-            # Payload decoded without signature verification for identification only
             payload = jwt.decode(token, options={"verify_signature": False})
             user_id = payload.get("sub")
             if user_id:
@@ -137,26 +147,27 @@ FEATURE_NAMES = [
 
 # --- API Endpoints ---
 
+# FIXED: Changed from 'async def' to standard 'def' to offload Synchronous DB Blocking operations to ThreadPool
 @app.post("/predict", response_model=FraudResponse)
 @limiter.limit("10/minute")
-async def predict_fraud(data: FraudInput, request: Request, db: Session = Depends(get_db)):
+def predict_fraud(data: FraudInput, request: Request, db: Session = Depends(get_db)):
     """
     Predicts if a transaction is fraudulent using the Hybrid (AE + ISO) model.
-    Inputs exactly 30 features and logs results to the database.
+    Inputs exactly 30 features and safely offloads synchronous logging tasks.
     """
     start_time = time.time()
-    logger.info("Incoming prediction request...")
+    logger.info("Incoming prediction request routing to inference framework...")
 
     try:
-        # Validate feature count
+        # Validate feature matrix shape
         if len(data.features) != 30:
-            logger.warning(f"Invalid input: Expected 30 features, got {len(data.features)}")
+            logger.warning(f"Invalid input shape: Expected 30 features, got {len(data.features)}")
             raise ValueError("Exactly 30 features are required (PCA components + Time/Amount)")
 
-        # Convert input to DataFrame with proper column names for MLflow schema matching
+        # Map list inputs to structural DataFrame matching the MLflow inferred schema
         input_df = pd.DataFrame([data.features], columns=FEATURE_NAMES)
 
-        # Run model inference
+        # Run model inference (The Custom PyFunc Wrapper handles Log Transform & Scaling automatically)
         raw_results = model.predict(input_df)
 
         pred = int(raw_results["fraud_prediction"].iloc[0])
@@ -166,7 +177,7 @@ async def predict_fraud(data: FraudInput, request: Request, db: Session = Depend
         process_time = (time.time() - start_time) * 1000
         request_id = str(uuid.uuid4())
 
-        # Persistence: Log the prediction results in DB
+        # Database Persistence Audit Logging
         new_log = PredictionLog(
             id=request_id,
             input_data=str(data.features),
@@ -178,7 +189,7 @@ async def predict_fraud(data: FraudInput, request: Request, db: Session = Depend
         db.add(new_log)
         db.commit()
 
-        logger.info(f"ID: {request_id} | Prediction: {'FRAUD' if pred == 1 else 'NORMAL'} | Time: {process_time:.2f}ms")
+        logger.info(f"ID: {request_id} | Outcome: {'FRAUD' if pred == 1 else 'NORMAL'} | Latency: {process_time:.2f}ms")
 
         return {
             "id": request_id,
@@ -186,46 +197,46 @@ async def predict_fraud(data: FraudInput, request: Request, db: Session = Depend
             "iso_score": iso,
             "reconstruction_error": mse,
             "process_time_ms": round(process_time, 2),
-            "timestamp": datetime.now()
+            "timestamp": datetime.now(timezone.utc)
         }
 
     except Exception as e:
-        logger.error(f"Inference Error: {str(e)}")
+        logger.error(f"Inference Application Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/logs/fraud-only")
 def get_all_frauds(db: Session = Depends(get_db)):
-    """Retrieves all historical predictions flagged as fraud."""
-    logger.info("Fetching fraud-only history.")
+    """Retrieves historical prediction matrices flagged strictly as fraud."""
+    logger.info("Fetching verified fraud anomalies history records.")
     return db.query(PredictionLog).filter(PredictionLog.prediction == 1).all()
 
 @app.put("/logs/{log_id}")
 def update_prediction_status(log_id: str, new_pred: int, db: Session = Depends(get_db)):
-    """Manual override for a prediction status (Human-in-the-loop)."""
+    """Manual override mechanism for validation alignment (Human-in-the-loop strategy)."""
     log = db.query(PredictionLog).filter(PredictionLog.id == log_id).first()
     if not log:
-        logger.warning(f"Update failed: Log ID {log_id} not found.")
-        raise HTTPException(status_code=404, detail="Log not found")
+        logger.warning(f"Override update execution failed: Log ID {log_id} missing.")
+        raise HTTPException(status_code=404, detail="Log record not found")
     
     log.prediction = new_pred
     db.commit()
-    logger.info(f"Log ID {log_id} updated to prediction: {new_pred}")
+    logger.info(f"Human-in-the-loop override: Log ID {log_id} re-classified to: {new_pred}")
     return {"status": "Updated successfully"}
 
 @app.delete("/logs/cleanup")
 def delete_old_logs(db: Session = Depends(get_db)):
-    """Clears all historical logs from the database."""
-    logger.warning("Log cleanup triggered - Deleting all records.")
+    """Clears all logged history elements from persistent database store."""
+    logger.warning("Log cleanup protocol activated - purging all structural logs.")
     db.query(PredictionLog).delete()
     db.commit()
-    return {"message": "All logs cleared"}
+    return {"message": "All database logs cleared successfully"}
 
 @app.get("/")
 def health():
-    """Health check endpoint to verify API status."""
-    return {"status": "API is running "}
+    """Liveness and Readiness infrastructure health probe indicator endpoint."""
+    return {"status": "API is healthy and serving inference requests"}
 
 if __name__ == "__main__":
     import uvicorn
-    # Execution entry point
+    # Production execution engine configuration
     uvicorn.run(app, host="0.0.0.0", port=8000)
