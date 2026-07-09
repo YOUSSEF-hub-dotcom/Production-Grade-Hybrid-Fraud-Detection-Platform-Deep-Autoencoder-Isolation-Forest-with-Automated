@@ -16,7 +16,7 @@ def load_and_preprocess_data(file_path=r"creditcard.csv"):
     logger.info(f"Loading and preprocessing data from {file_path}")
 
     # -------------------------------------------------------------------------
-    #  PHASE 2: QUICK DATA INSPECTION
+    #  PHASE 1: QUICK DATA INSPECTION
     # -------------------------------------------------------------------------
     df = pd.read_csv(file_path)
     pd.set_option('display.width', None)
@@ -62,7 +62,7 @@ def load_and_preprocess_data(file_path=r"creditcard.csv"):
     plt.show()
 
     # -------------------------------------------------------------------------
-    #  PHASE 2: EDA (Understanding Distribution, Skew, Outliers & Imbalance)
+    #  PHASE 3: EDA (Understanding Distribution, Skew, Outliers & Imbalance)
     # -------------------------------------------------------------------------
     logger.info("=========== EDA & Visualization ==========")
 
