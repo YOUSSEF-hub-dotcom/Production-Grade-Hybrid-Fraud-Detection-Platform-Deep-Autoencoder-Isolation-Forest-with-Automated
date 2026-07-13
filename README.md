@@ -1,6 +1,6 @@
 # 🚀 Deep Hybrid Fraud Detection System
 
-A hybrid fraud detection system for **real-time credit card anomaly detection** using **Deep Learning + Machine Learning + MLOps**.
+A hybrid fraud detection system for **real-time credit card anomaly detection** using **Deep Learning + Machine Learning + MLflow**.
 The project is designed to detect fraudulent transactions — including **previously unseen patterns** — through an **unsupervised anomaly detection pipeline** that does not rely on labeled fraud samples for training.
 
 ---
